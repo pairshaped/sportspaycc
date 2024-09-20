@@ -1,0 +1,27 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sportspay Widget</title>
+  <link rel="icon" href="data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAAC">
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+  <script src="dev.js"></script>
+</head>
+<body>
+  <div class="container">
+    <div id="sportspay"></div>
+  </div>
+  <script>
+    var sportspay = Elm.Sportspay.init(
+      {
+        node: document.getElementById("sportspay"),
+        flags: {
+          host: "replaceme",
+          apiKey: "replaceme"
+        }
+      }
+    )
+  </script>
+</body>
+</html>

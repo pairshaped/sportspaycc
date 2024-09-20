@@ -1,0 +1,12 @@
+{
+  "scripts": {
+    "start": "elm-live src/Sportspay.elm --start-page=dev.html --open -- --output=dev.js --debug"
+  },
+  "devDependencies": {
+    "elm": "^0.19.1-5",
+    "elm-live": "^4.0.2"
+  },
+  "dependencies": {
+    "uglifyjs": "^2.4.11"
+  }
+}
