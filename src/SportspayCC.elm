@@ -3,8 +3,8 @@ module SportspayCC exposing (init)
 import Browser
 import CreditCard
 import CreditCard.Config
-import Html exposing (Html, button, div, input, label, p, text)
-import Html.Attributes exposing (class, placeholder, style, type_, value)
+import Html exposing (Html, a, button, div, em, img, input, label, p, text)
+import Html.Attributes exposing (alt, class, href, placeholder, src, style, type_, value)
 import Html.Events exposing (onBlur, onClick, onInput)
 import Http
 import Regex exposing (Regex)
@@ -140,7 +140,7 @@ validate { flags, cardData, currentDate } =
             case cardData.cvv of
                 Just cvv ->
                     if String.length cvv /= 3 then
-                        Just "Too short"
+                        Just "Wrong length"
 
                     else if String.toInt cvv == Nothing then
                         Just "Not a number"
@@ -340,7 +340,7 @@ update msg model =
                                     Nothing
 
                                 _ ->
-                                    if String.length value > 4 then
+                                    if String.length value > 3 then
                                         cardData.cvv
 
                                     else
@@ -371,81 +371,92 @@ update msg model =
 view : Model -> Html Msg
 view { cardData } =
     let
-        viewHeader =
-            div [ class "my-3" ]
-                [ CreditCard.card CreditCard.Config.defaultConfig cardData ]
-
-        viewBody =
-            div []
-                [ div [ class "my-3" ]
-                    [ input
-                        [ class "w-100 p-2"
-                        , onInput UpdateCardNumber
-                        , value (Maybe.withDefault "" cardData.number)
-                        , onBlur Validate
-                        , placeholder "Number"
-                        ]
-                        []
-                    ]
-                , div [ class "my-3" ]
-                    [ input
-                        [ class "w-100 p-2"
-                        , onInput UpdateCardName
-                        , value (Maybe.withDefault "" cardData.name)
-                        , onBlur Validate
-                        , placeholder "Cardholder Name"
-                        ]
-                        []
-                    ]
-                , div [ class "my-3 d-flex" ]
-                    [ input
-                        [ class "p-2 mr-2"
-                        , style "width" "60px"
-                        , onInput UpdateCardMonth
-                        , onBlur Validate
-                        , value (Maybe.withDefault "" cardData.month)
-                        , placeholder "MM"
-                        ]
-                        []
-                    , input
-                        [ class "p-2 mr-2"
-                        , style "width" "80px"
-                        , onInput UpdateCardYear
-                        , onBlur Validate
-                        , value (Maybe.withDefault "" cardData.year)
-                        , placeholder "YYYY"
-                        ]
-                        []
-                    , input
-                        [ class "p-2"
-                        , style "width" "80px"
-                        , onInput UpdateCardCvv
-                        , onBlur Validate
-                        , value (Maybe.withDefault "" cardData.cvv)
-                        , placeholder "CVV"
-                        ]
-                        []
-                    ]
+        cardNumberInput =
+            input
+                [ class "w-100 p-2"
+                , onInput UpdateCardNumber
+                , value (Maybe.withDefault "" cardData.number)
+                , onBlur Validate
+                , placeholder "Card Number"
                 ]
+                []
 
-        viewFooter =
-            div [ class "d-flex justify-content-end my-3" ]
-                [ button
-                    [ class "mr-2 btn btn-secondary"
-                    , onClick CancelPayment
+        cardNameInput =
+            input
+                [ class "w-100 p-2"
+                , onInput UpdateCardName
+                , value (Maybe.withDefault "" cardData.name)
+                , onBlur Validate
+                , placeholder "Cardholder Name"
+                ]
+                []
+
+        cardMonthInput =
+            input
+                [ class "p-2 mr-2"
+                , style "width" "40px"
+                , onInput UpdateCardMonth
+                , onBlur Validate
+                , value (Maybe.withDefault "" cardData.month)
+                , placeholder "M"
+                ]
+                []
+
+        cardYearInput =
+            input
+                [ class "p-2 mr-2"
+                , style "width" "60px"
+                , onInput UpdateCardYear
+                , onBlur Validate
+                , value (Maybe.withDefault "" cardData.year)
+                , placeholder "YYYY"
+                ]
+                []
+
+        cardCvvInput =
+            input
+                [ class "p-2 mr-2"
+                , style "width" "52px"
+                , onInput UpdateCardCvv
+                , onBlur Validate
+                , value (Maybe.withDefault "" cardData.cvv)
+                , placeholder "CVV"
+                ]
+                []
+
+        cardButtons =
+            div [ class "ml-1 d-flex flex-fill justify-content-end" ]
+                [ div [ class "d-flex flex-column justify-content-end mr-2" ]
+                    [ a
+                        [ class "btn btn-secondary"
+                        , href "#"
+                        , onClick CancelPayment
+                        ]
+                        [ text "Cancel" ]
                     ]
-                    [ text "Cancel" ]
-                , button
-                    [ class "btn btn-primary"
-                    , onClick SubmitPayment
+                , div [ class "d-flex flex-column justify-content-end" ]
+                    [ button
+                        [ class "btn btn-primary"
+                        , onClick SubmitPayment
+                        ]
+                        [ text "Submit" ]
                     ]
-                    [ text "Submit" ]
                 ]
     in
-    div [ class "m-4", style "width" "350px" ]
-        [ viewHeader
-        , viewBody
-        , viewFooter
+    div [ class "text-left", style "width" "350px" ]
+        [ div []
+            [ CreditCard.card CreditCard.Config.defaultConfig cardData ]
+        , div []
+            [ div [ class "my-3" ] [ cardNumberInput ]
+            , div [ class "my-3" ] [ cardNameInput ]
+            , div [ class "my-3 d-flex" ]
+                [ cardMonthInput
+                , cardYearInput
+                , cardCvvInput
+                , cardButtons
+                ]
+            ]
+        , img [ class "w-50 mt-2", src "sports-pay-logo.svg", alt "Powered by SportsPay" ] []
         ]
 
 
