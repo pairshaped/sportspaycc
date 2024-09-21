@@ -1,4 +1,4 @@
-module Sportspay exposing (init)
+module SportspayCC exposing (init)
 
 import Browser
 import CreditCard

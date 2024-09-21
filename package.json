@@ -1,6 +1,6 @@
 {
   "scripts": {
-    "start": "elm-live src/Sportspay.elm --start-page=dev.html --open -- --output=dev.js --debug"
+    "start": "elm-live src/SportspayCC.elm --start-page=dev.html --open -- --output=dev.js --debug"
   },
   "devDependencies": {
     "elm": "^0.19.1-5",
