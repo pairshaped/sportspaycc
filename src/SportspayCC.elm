@@ -3,10 +3,12 @@ module SportspayCC exposing (init)
 import Browser
 import CreditCard
 import CreditCard.Config
-import Html exposing (Html, a, button, div, em, img, input, label, p, text)
+import Html exposing (Html, a, button, div, em, form, img, input, label, p, text)
 import Html.Attributes exposing (alt, class, href, placeholder, src, style, type_, value)
-import Html.Events exposing (onBlur, onClick, onInput)
+import Html.Events exposing (onBlur, onClick, onInput, onSubmit)
 import Http
+import Json.Decode as Decode exposing (Decoder)
+import Json.Decode.Pipeline exposing (required)
 import Regex exposing (Regex)
 import Task
 import Time
@@ -24,12 +26,14 @@ type alias Model =
     , cardData : CreditCard.CardData {}
     , cardErrors : CardErrors
     , currentDate : Maybe DateParts
+    , oneTimeToken : Maybe String
     }
 
 
 type alias Flags =
     { host : String
     , apiKey : String
+    , paymentUrl : String
     }
 
 
@@ -58,6 +62,7 @@ type alias CardErrors =
     , month : Maybe String
     , year : Maybe String
     , cvv : Maybe String
+    , oneTimeToken : Maybe String
     }
 
 
@@ -69,9 +74,16 @@ init : Flags -> ( Model, Cmd Msg )
 init flags =
     let
         emptyCardErrors =
-            { number = Nothing, name = Nothing, month = Nothing, year = Nothing, cvv = Nothing }
+            { number = Nothing, name = Nothing, month = Nothing, year = Nothing, cvv = Nothing, oneTimeToken = Nothing }
     in
-    ( { flags = flags, cardData = CreditCard.emptyCardData, cardErrors = emptyCardErrors, currentDate = Nothing }, getCurrentTime )
+    ( { flags = flags
+      , cardData = CreditCard.emptyCardData
+      , cardErrors = emptyCardErrors
+      , currentDate = Nothing
+      , oneTimeToken = Nothing
+      }
+    , getCurrentTime
+    )
 
 
 getCurrentTime : Cmd Msg
@@ -156,13 +168,82 @@ validate { flags, cardData, currentDate } =
     , month = Nothing
     , year = Nothing
     , cvv = validCvv
+    , oneTimeToken = Nothing
     }
 
 
-tokenize : Model -> String
+isValid : Model -> Bool
+isValid model =
+    let
+        hasNoErrors cardErrors =
+            (cardErrors.number == Nothing)
+                && (cardErrors.name == Nothing)
+                && (cardErrors.month == Nothing)
+                && (cardErrors.year == Nothing)
+                && (cardErrors.cvv == Nothing)
+    in
+    validate model
+        |> hasNoErrors
+
+
+tokenizeResultDecoder : Decoder TokenizeResult
+tokenizeResultDecoder =
+    -- { "tokenized": true
+    -- , "text": "TOKEN OK"
+    -- , "datavalid": true
+    -- , "apikey":
+    --     { "isvalid": true
+    --     , "message": ""
+    --     }
+    -- , "cardnum":
+    --     { "isvalid": true
+    --     , "message": ""
+    --     }
+    -- , "cardexp":
+    --     { "isvalid": true
+    --     , "message": ""
+    --     }
+    -- , "cardcvv":
+    --     { "isvalid": true
+    --     ,"message": ""
+    --     }
+    -- , "ott": "4200HDETSHGT0042"
+    -- }
+    Decode.succeed TokenizeResult
+        |> required "tokenized" Decode.bool
+        |> required "text" Decode.string
+        |> required "datavalid" Decode.bool
+        |> required "ott" Decode.string
+
+
+tokenize : Model -> Cmd Msg
 tokenize { flags, cardData } =
-    -- tokenize
-    ""
+    case [ cardData.number, cardData.month, cardData.year, cardData.cvv ] of
+        [ Just number, Just month, Just year, Just cvv ] ->
+            let
+                cardDataToParams =
+                    "&CARDNUM=" ++ number ++ "&CARDEXP=" ++ (month ++ String.right 2 year) ++ "&CARDCVV=" ++ cvv
+            in
+            Http.get
+                { url = flags.host ++ "/api/HOSTPYMT/ott?APIKEY=" ++ flags.apiKey ++ cardDataToParams
+                , expect = Http.expectJson GotTokenizeResult tokenizeResultDecoder
+                }
+
+        _ ->
+            Cmd.none
+
+
+completePayment : Model -> Cmd Msg
+completePayment { flags, oneTimeToken } =
+    case onTimeToken of
+        Just ott ->
+            Http.get
+                { url = flags.paymentUrl ++ "ott=" ++ ott
+                , expect = Http.expectJson GotPaymentResponse paymentResultDecoder
+                }
+
+        _ ->
+            Cmd.none
 
 
 
@@ -180,6 +261,8 @@ type Msg
     | Validate
     | CancelPayment
     | SubmitPayment
+    | GotTokenizeResponse (Result Http.Error String)
+    | GotPaymentResponse (Result Http.Error String)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -361,7 +444,35 @@ update msg model =
             ( model, Cmd.none )
 
         SubmitPayment ->
-            ( model, Cmd.none )
+            let
+                updatedModel =
+                    { model | cardErrors = validate model }
+            in
+            ( updatedModel
+            , if isValid updatedModel then
+                -- TODO Tokenize / send it off to get our token
+                -- Depending on the result, we either have an error to display, or the on time token (OTT) we can send to the server to complete the transaction.
+                Cmd.none
+
+              else
+                Cmd.none
+            )
+
+        GotTokenizeResponse response ->
+            case response of
+                Ok responseText ->
+                    ( model, Cmd.none )
+
+                Err _ ->
+                    ( model, Cmd.none )
+
+        GotPaymentResponse response ->
+            case response of
+                Ok responseText ->
+                    ( model, Cmd.none )
+
+                Err _ ->
+                    ( model, Cmd.none )
 
 
 
@@ -435,25 +546,27 @@ view { cardData } =
                         [ text "Cancel" ]
                     ]
                 , div [ class "d-flex flex-column justify-content-end" ]
-                    [ button
-                        [ class "btn btn-primary"
-                        , onClick SubmitPayment
+                    [ input
+                        [ type_ "submit"
+                        , class "btn btn-primary"
                         ]
                         [ text "Submit" ]
                     ]
                 ]
     in
     div [ class "text-left", style "width" "350px" ]
-        [ div []
-            [ CreditCard.card CreditCard.Config.defaultConfig cardData ]
-        , div []
-            [ div [ class "my-3" ] [ cardNumberInput ]
-            , div [ class "my-3" ] [ cardNameInput ]
-            , div [ class "my-3 d-flex" ]
-                [ cardMonthInput
-                , cardYearInput
-                , cardCvvInput
-                , cardButtons
+        [ form [ onSubmit SubmitPayment ]
+            [ div []
+                [ CreditCard.card CreditCard.Config.defaultConfig cardData ]
+            , div []
+                [ div [ class "my-3" ] [ cardNumberInput ]
+                , div [ class "my-3" ] [ cardNameInput ]
+                , div [ class "my-3 d-flex" ]
+                    [ cardMonthInput
+                    , cardYearInput
+                    , cardCvvInput
+                    , cardButtons
+                    ]
                 ]
             ]
         , img [ class "w-50 mt-2", src "sports-pay-logo.svg", alt "Powered by SportsPay" ] []
