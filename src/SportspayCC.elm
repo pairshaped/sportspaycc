@@ -4,7 +4,7 @@ import Browser
 import Browser.Navigation as Navigation
 import CreditCard
 import CreditCard.Config
-import Html exposing (Html, a, button, div, em, form, img, input, label, p, text)
+import Html exposing (Html, a, button, div, em, form, h4, img, input, label, p, text)
 import Html.Attributes exposing (alt, class, disabled, href, placeholder, src, style, type_, value)
 import Html.Events exposing (onBlur, onInput, onSubmit)
 import Http
@@ -25,7 +25,6 @@ type alias Model =
     , cardErrors : CardErrors
     , currentDate : Maybe DateParts
     , ott : Maybe String
-    , paying : Bool
     }
 
 
@@ -61,7 +60,7 @@ type alias CardErrors =
     , name : Maybe String
     , expiry : Maybe String
     , cvv : Maybe String
-    , tokenize : Maybe String
+    , ott : Maybe String
     }
 
 
@@ -85,16 +84,11 @@ type alias PaymentResult =
 
 init : Flags -> ( Model, Cmd Msg )
 init flags =
-    let
-        emptyCardErrors =
-            { number = Nothing, name = Nothing, expiry = Nothing, cvv = Nothing, tokenize = Nothing }
-    in
     ( { flags = flags
       , cardData = CreditCard.emptyCardData
       , cardErrors = emptyCardErrors
       , currentDate = Nothing
       , ott = Nothing
-      , paying = False
       }
     , getCurrentTime
     )
@@ -108,11 +102,11 @@ getCurrentTime =
 supportedCardTypes : List CardType
 supportedCardTypes =
     [ { name = Mastercard
-      , bins = Maybe.withDefault Regex.never <| Regex.fromString "/^(603136|603689|608619|606200|603326|605919|608783|607998|603690|604891|603600|603134|608718|603680|608710|604998)|(5[1-5][0-9]{14}|2221[0-9]{12}|222[2-9][0-9]{12}|22[3-9][0-9]{13}|2[3-6][0-9]{14}|27[01][0-9]{13}|2720[0-9]{12})$/"
+      , bins = Maybe.withDefault Regex.never <| Regex.fromString "^(603136|603689|608619|606200|603326|605919|608783|607998|603690|604891|603600|603134|608718|603680|608710|604998)|(5[1-5][0-9]{14}|2221[0-9]{12}|222[2-9][0-9]{12}|22[3-9][0-9]{13}|2[3-6][0-9]{14}|27[01][0-9]{13}|2720[0-9]{12})$"
       , codeLength = 3
       }
     , { name = Visa
-      , bins = Maybe.withDefault Regex.never <| Regex.fromString "/^4[0-9]{12}(?:[0-9]{3})?$/"
+      , bins = Maybe.withDefault Regex.never <| Regex.fromString "^4[0-9]{12}(?:[0-9]{3})?$"
       , codeLength = 3
       }
     ]
@@ -189,16 +183,17 @@ validate { flags, cardData, currentDate } =
     , name = Nothing
     , expiry = validExpiry
     , cvv = validCvv
-    , tokenize = Nothing
+    , ott = Nothing
     }
 
 
 hasCardErrors : CardErrors -> Bool
-hasCardErrors { number, expiry, cvv } =
+hasCardErrors { number, expiry, cvv, ott } =
     (number /= Nothing)
-        -- && (name /= Nothing)
-        && (expiry /= Nothing)
-        && (cvv /= Nothing)
+        -- || (name /= Nothing)
+        || (expiry /= Nothing)
+        || (cvv /= Nothing)
+        || (ott /= Nothing)
 
 
 tokenizeResultDecoder : Decoder TokenizeResult
@@ -250,8 +245,8 @@ paymentResultDecoder =
         |> required "message" Decode.string
 
 
-tokenize : Model -> Cmd Msg
-tokenize { flags, cardData } =
+getOneTimeToken : Model -> Cmd Msg
+getOneTimeToken { flags, cardData } =
     case [ cardData.number, cardData.month, cardData.year, cardData.cvv ] of
         [ Just number, Just month, Just year, Just cvv ] ->
             let
@@ -286,6 +281,10 @@ completePayment flags ott =
             flags.transactionUrl ++ "?ott=" ++ ott
     in
     Navigation.load url
+
+
+emptyCardErrors =
+    { number = Nothing, name = Nothing, expiry = Nothing, cvv = Nothing, ott = Nothing }
 
 
 
@@ -482,12 +481,16 @@ update msg model =
             ( { model | cardData = updatedCardData model.cardData }, Cmd.none )
 
         Validate ->
-            ( { model | cardErrors = validate model }, Cmd.none )
+            let
+                cardErrors =
+                    validate model
+            in
+            ( { model | cardErrors = cardErrors }, Cmd.none )
 
         SubmitCard ->
             let
                 updatedModel =
-                    { model | cardErrors = validate model, paying = True }
+                    { model | cardErrors = validate model }
 
                 isValid : Bool
                 isValid =
@@ -503,7 +506,7 @@ update msg model =
             in
             ( updatedModel
             , if isValid then
-                tokenize updatedModel
+                getOneTimeToken updatedModel
 
               else
                 Cmd.none
@@ -523,7 +526,7 @@ update msg model =
                                     , name = Nothing
                                     , expiry = result.expiryError
                                     , cvv = result.cvvError
-                                    , tokenize = Just result.message
+                                    , ott = Just result.message
                                     }
                             in
                             ( { model | cardErrors = updatedCardErrors }, Cmd.none )
@@ -531,9 +534,9 @@ update msg model =
                 Err error ->
                     let
                         updatedCardErrors cardErrors =
-                            { cardErrors | tokenize = Just "Server error" }
+                            { cardErrors | ott = Just "Server error" }
                     in
-                    ( { model | cardErrors = updatedCardErrors model.cardErrors, paying = False }, Cmd.none )
+                    ( { model | cardErrors = updatedCardErrors model.cardErrors }, Cmd.none )
 
 
 
@@ -541,17 +544,47 @@ update msg model =
 
 
 view : Model -> Html Msg
-view { flags, cardData, ott, paying } =
+view { flags, cardData, cardErrors, ott } =
     case ott of
         Just ott_ ->
             div [] [ text ("Have OTT: " ++ ott_) ]
 
         Nothing ->
-            viewCardData flags cardData paying
+            div [ class "d-flex flex-column" ]
+                [ viewCardData flags cardData cardErrors
+                , if hasCardErrors cardErrors then
+                    viewErrors cardErrors
+
+                  else
+                    text ""
+                ]
 
 
-viewCardData : Flags -> CreditCard.CardData {} -> Bool -> Html Msg
-viewCardData { transactionAmount } cardData paying =
+viewErrors : CardErrors -> Html Msg
+viewErrors cardErrors =
+    let
+        viewError label errMsg =
+            case errMsg of
+                Just msg ->
+                    div [ class "d-flex mt-2" ]
+                        [ div [ class "mr-2" ] [ text label ]
+                        , div [] [ text msg ]
+                        ]
+
+                Nothing ->
+                    text ""
+    in
+    div [ class "d-flex flex-column mt-2 text-danger" ]
+        [ h4 [ class "mt-2" ] [ text "Errors" ]
+        , viewError "Number: " cardErrors.number
+        , viewError "Expiry: " cardErrors.expiry
+        , viewError "CVV: " cardErrors.cvv
+        , viewError "OTT: " cardErrors.ott
+        ]
+
+
+viewCardData : Flags -> CreditCard.CardData {} -> CardErrors -> Html Msg
+viewCardData { transactionAmount } cardData cardErrors =
     let
         cardNumberInput =
             input
@@ -612,7 +645,7 @@ viewCardData { transactionAmount } cardData paying =
                     [ type_ "submit"
                     , class "btn btn-primary"
                     , value ("Pay " ++ transactionAmount)
-                    , disabled paying
+                    , disabled (hasCardErrors cardErrors)
                     ]
                     []
                 ]
