@@ -80,4 +80,4 @@ We are using the following third party libraries:
 
 ## Copyright and License
 
-[See LICENSE.md](LICENSE.md)
+[See LICENSE](LICENSE)
