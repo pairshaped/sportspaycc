@@ -1,23 +1,21 @@
 module SportspayCC exposing (init)
 
 import Browser
+import Browser.Navigation as Navigation
 import CreditCard
 import CreditCard.Config
 import Html exposing (Html, a, button, div, em, form, img, input, label, p, text)
-import Html.Attributes exposing (alt, class, href, placeholder, src, style, type_, value)
-import Html.Events exposing (onBlur, onClick, onInput, onSubmit)
+import Html.Attributes exposing (alt, class, disabled, href, placeholder, src, style, type_, value)
+import Html.Events exposing (onBlur, onInput, onSubmit)
 import Http
 import Json.Decode as Decode exposing (Decoder)
-import Json.Decode.Pipeline exposing (required)
+import Json.Decode.Pipeline exposing (custom, optional, optionalAt, required)
 import Regex exposing (Regex)
 import Task
 import Time
 
 
 
--- import Json.Decode as Decode exposing (Decoder, nullable, string)
--- import RemoteData exposing (RemoteData(..), WebData)
--- import RemoteData.Http
 -- MODEL
 
 
@@ -26,14 +24,16 @@ type alias Model =
     , cardData : CreditCard.CardData {}
     , cardErrors : CardErrors
     , currentDate : Maybe DateParts
-    , oneTimeToken : Maybe String
+    , ott : Maybe String
+    , paying : Bool
     }
 
 
 type alias Flags =
-    { host : String
-    , apiKey : String
-    , paymentUrl : String
+    { sportspayHost : String
+    , sportspayApiKey : String
+    , transactionAmount : String
+    , transactionUrl : String
     }
 
 
@@ -59,11 +59,24 @@ type CardName
 type alias CardErrors =
     { number : Maybe String
     , name : Maybe String
-    , month : Maybe String
-    , year : Maybe String
+    , expiry : Maybe String
     , cvv : Maybe String
-    , oneTimeToken : Maybe String
+    , tokenize : Maybe String
     }
+
+
+type alias TokenizeResult =
+    { message : String
+    , ott : Maybe String
+    , apiKeyError : Maybe String
+    , numberError : Maybe String
+    , expiryError : Maybe String
+    , cvvError : Maybe String
+    }
+
+
+type alias PaymentResult =
+    { message : String }
 
 
 
@@ -74,13 +87,14 @@ init : Flags -> ( Model, Cmd Msg )
 init flags =
     let
         emptyCardErrors =
-            { number = Nothing, name = Nothing, month = Nothing, year = Nothing, cvv = Nothing, oneTimeToken = Nothing }
+            { number = Nothing, name = Nothing, expiry = Nothing, cvv = Nothing, tokenize = Nothing }
     in
     ( { flags = flags
       , cardData = CreditCard.emptyCardData
       , cardErrors = emptyCardErrors
       , currentDate = Nothing
-      , oneTimeToken = Nothing
+      , ott = Nothing
+      , paying = False
       }
     , getCurrentTime
     )
@@ -110,7 +124,6 @@ validate { flags, cardData, currentDate } =
     let
         validNumber : Maybe String
         validNumber =
-            -- isValid
             case cardData.number of
                 Just num ->
                     let
@@ -130,29 +143,38 @@ validate { flags, cardData, currentDate } =
                         Just "Invalid Card Type"
 
                 Nothing ->
-                    Just "Blank number"
+                    Nothing
 
-        isExpirationDateValid : Bool
-        isExpirationDateValid =
+        validExpiry : Maybe String
+        validExpiry =
             case ( currentDate, cardData.month, cardData.year ) of
                 ( Just currentDate_, Just month, Just year ) ->
                     case ( String.toInt month, String.toInt year ) of
                         ( Just m, Just y ) ->
-                            (y >= currentDate_.year)
-                                && (y <= (currentDate_.year + 15))
+                            if (y < currentDate_.year) || (y == currentDate_.year && m < currentDate_.month) then
+                                Just "Already expired"
+
+                            else if y > (currentDate_.year + 15) then
+                                Just "Too far in the future"
+
+                            else
+                                Nothing
 
                         _ ->
-                            False
+                            Nothing
 
                 _ ->
-                    False
+                    Nothing
 
         validCvv : Maybe String
         validCvv =
             case cardData.cvv of
                 Just cvv ->
-                    if String.length cvv /= 3 then
-                        Just "Wrong length"
+                    if String.length cvv < 3 then
+                        Just "Too short"
+
+                    else if String.length cvv > 3 then
+                        Just "Too long"
 
                     else if String.toInt cvv == Nothing then
                         Just "Not a number"
@@ -165,55 +187,67 @@ validate { flags, cardData, currentDate } =
     in
     { number = validNumber
     , name = Nothing
-    , month = Nothing
-    , year = Nothing
+    , expiry = validExpiry
     , cvv = validCvv
-    , oneTimeToken = Nothing
+    , tokenize = Nothing
     }
 
 
-isValid : Model -> Bool
-isValid model =
-    let
-        hasNoErrors cardErrors =
-            (cardErrors.number == Nothing)
-                && (cardErrors.name == Nothing)
-                && (cardErrors.month == Nothing)
-                && (cardErrors.year == Nothing)
-                && (cardErrors.cvv == Nothing)
-    in
-    validate model
-        |> hasNoErrors
+hasCardErrors : CardErrors -> Bool
+hasCardErrors { number, expiry, cvv } =
+    (number /= Nothing)
+        -- && (name /= Nothing)
+        && (expiry /= Nothing)
+        && (cvv /= Nothing)
 
 
 tokenizeResultDecoder : Decoder TokenizeResult
 tokenizeResultDecoder =
-    -- { "tokenized": true
-    -- , "text": "TOKEN OK"
-    -- , "datavalid": true
-    -- , "apikey":
+    -- , "TEXT": "TOKEN OK"
+    -- , "OTT": "4200HDETSHGT0042"
+    -- , "APIKEY":
     --     { "isvalid": true
     --     , "message": ""
     --     }
-    -- , "cardnum":
+    -- , "CARDNUM":
     --     { "isvalid": true
     --     , "message": ""
     --     }
-    -- , "cardexp":
+    -- , "CARDEXP":
     --     { "isvalid": true
     --     , "message": ""
     --     }
-    -- , "cardcvv":
+    -- , "CARDCVV":
     --     { "isvalid": true
     --     ,"message": ""
     --     }
-    -- , "ott": "4200HDETSHGT0042"
     -- }
+    let
+        decodeMessage =
+            Decode.string
+                |> Decode.andThen
+                    (\str ->
+                        case str of
+                            "" ->
+                                Decode.succeed Nothing
+
+                            _ ->
+                                Decode.succeed (Just str)
+                    )
+    in
     Decode.succeed TokenizeResult
-        |> required "tokenized" Decode.bool
-        |> required "text" Decode.string
-        |> required "datavalid" Decode.bool
-        |> required "ott" Decode.string
+        |> required "TEXT" Decode.string
+        |> optional "OTT" (Decode.nullable Decode.string) Nothing
+        |> optionalAt [ "apikey", "message" ] decodeMessage Nothing
+        |> optionalAt [ "cardnum", "message" ] decodeMessage Nothing
+        |> optionalAt [ "cardexp", "message" ] decodeMessage Nothing
+        |> optionalAt [ "cardcvv", "message" ] decodeMessage Nothing
+
+
+paymentResultDecoder : Decoder PaymentResult
+paymentResultDecoder =
+    Decode.succeed PaymentResult
+        |> required "message" Decode.string
 
 
 tokenize : Model -> Cmd Msg
@@ -221,29 +255,37 @@ tokenize { flags, cardData } =
     case [ cardData.number, cardData.month, cardData.year, cardData.cvv ] of
         [ Just number, Just month, Just year, Just cvv ] ->
             let
-                cardDataToParams =
-                    "&CARDNUM=" ++ number ++ "&CARDEXP=" ++ (month ++ String.right 2 year) ++ "&CARDCVV=" ++ cvv
+                url =
+                    let
+                        cardDataToParams =
+                            let
+                                month_ =
+                                    if String.length month == 1 then
+                                        "0" ++ month
+
+                                    else
+                                        month
+                            in
+                            "&CARDNUM=" ++ number ++ "&CARDEXP=" ++ (month_ ++ String.right 2 year) ++ "&CARDCVV=" ++ cvv
+                    in
+                    flags.sportspayHost ++ "/api/HOSTPYMT/ott?APIKEY=" ++ flags.sportspayApiKey ++ cardDataToParams
             in
             Http.get
-                { url = flags.host ++ "/api/HOSTPYMT/ott?APIKEY=" ++ flags.apiKey ++ cardDataToParams
-                , expect = Http.expectJson GotTokenizeResult tokenizeResultDecoder
+                { url = url
+                , expect = Http.expectJson GotTokenizeResponse tokenizeResultDecoder
                 }
 
         _ ->
             Cmd.none
 
 
-completePayment : Model -> Cmd Msg
-completePayment { flags, oneTimeToken } =
-    case onTimeToken of
-        Just ott ->
-            Http.get
-                { url = flags.paymentUrl ++ "ott=" ++ ott
-                , expect = Http.expectJson GotPaymentResponse paymentResultDecoder
-                }
-
-        _ ->
-            Cmd.none
+completePayment : Flags -> String -> Cmd Msg
+completePayment flags ott =
+    let
+        url =
+            flags.transactionUrl ++ "?ott=" ++ ott
+    in
+    Navigation.load url
 
 
 
@@ -259,10 +301,8 @@ type Msg
     | UpdateCardYear String
     | UpdateCardCvv String
     | Validate
-    | CancelPayment
-    | SubmitPayment
-    | GotTokenizeResponse (Result Http.Error String)
-    | GotPaymentResponse (Result Http.Error String)
+    | SubmitCard
+    | GotTokenizeResponse (Result Http.Error TokenizeResult)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -375,16 +415,20 @@ update msg model =
                                     Nothing
 
                                 _ ->
-                                    case String.toInt value of
-                                        Just int ->
-                                            if int >= 0 && int <= 12 then
-                                                Just value
+                                    if String.length value > 2 then
+                                        cardData.month
 
-                                            else
+                                    else
+                                        case String.toInt value of
+                                            Just int ->
+                                                if int >= 0 && int <= 12 then
+                                                    Just value
+
+                                                else
+                                                    cardData.month
+
+                                            Nothing ->
                                                 cardData.month
-
-                                        Nothing ->
-                                            cardData.month
                     }
             in
             ( { model | cardData = updatedCardData model.cardData }, Cmd.none )
@@ -440,19 +484,26 @@ update msg model =
         Validate ->
             ( { model | cardErrors = validate model }, Cmd.none )
 
-        CancelPayment ->
-            ( model, Cmd.none )
-
-        SubmitPayment ->
+        SubmitCard ->
             let
                 updatedModel =
-                    { model | cardErrors = validate model }
+                    { model | cardErrors = validate model, paying = True }
+
+                isValid : Bool
+                isValid =
+                    let
+                        hasBlanks { number, month, year, cvv } =
+                            (number == Nothing)
+                                -- && (name == Nothing)
+                                && (month == Nothing)
+                                && (year == Nothing)
+                                && (cvv == Nothing)
+                    in
+                    not (hasBlanks model.cardData || hasCardErrors updatedModel.cardErrors)
             in
             ( updatedModel
-            , if isValid updatedModel then
-                -- TODO Tokenize / send it off to get our token
-                -- Depending on the result, we either have an error to display, or the on time token (OTT) we can send to the server to complete the transaction.
-                Cmd.none
+            , if isValid then
+                tokenize updatedModel
 
               else
                 Cmd.none
@@ -460,19 +511,29 @@ update msg model =
 
         GotTokenizeResponse response ->
             case response of
-                Ok responseText ->
-                    ( model, Cmd.none )
+                Ok result ->
+                    case result.ott of
+                        Just ott_ ->
+                            ( model, completePayment model.flags ott_ )
 
-                Err _ ->
-                    ( model, Cmd.none )
+                        Nothing ->
+                            let
+                                updatedCardErrors =
+                                    { number = result.numberError
+                                    , name = Nothing
+                                    , expiry = result.expiryError
+                                    , cvv = result.cvvError
+                                    , tokenize = Just result.message
+                                    }
+                            in
+                            ( { model | cardErrors = updatedCardErrors }, Cmd.none )
 
-        GotPaymentResponse response ->
-            case response of
-                Ok responseText ->
-                    ( model, Cmd.none )
-
-                Err _ ->
-                    ( model, Cmd.none )
+                Err error ->
+                    let
+                        updatedCardErrors cardErrors =
+                            { cardErrors | tokenize = Just "Server error" }
+                    in
+                    ( { model | cardErrors = updatedCardErrors model.cardErrors, paying = False }, Cmd.none )
 
 
 
@@ -480,7 +541,17 @@ update msg model =
 
 
 view : Model -> Html Msg
-view { cardData } =
+view { flags, cardData, ott, paying } =
+    case ott of
+        Just ott_ ->
+            div [] [ text ("Have OTT: " ++ ott_) ]
+
+        Nothing ->
+            viewCardData flags cardData paying
+
+
+viewCardData : Flags -> CreditCard.CardData {} -> Bool -> Html Msg
+viewCardData { transactionAmount } cardData paying =
     let
         cardNumberInput =
             input
@@ -537,30 +608,23 @@ view { cardData } =
 
         cardButtons =
             div [ class "ml-1 d-flex flex-fill justify-content-end" ]
-                [ div [ class "d-flex flex-column justify-content-end mr-2" ]
-                    [ a
-                        [ class "btn btn-secondary"
-                        , href "#"
-                        , onClick CancelPayment
-                        ]
-                        [ text "Cancel" ]
+                [ input
+                    [ type_ "submit"
+                    , class "btn btn-primary"
+                    , value ("Pay " ++ transactionAmount)
+                    , disabled paying
                     ]
-                , div [ class "d-flex flex-column justify-content-end" ]
-                    [ input
-                        [ type_ "submit"
-                        , class "btn btn-primary"
-                        ]
-                        [ text "Submit" ]
-                    ]
+                    []
                 ]
     in
     div [ class "text-left", style "width" "350px" ]
-        [ form [ onSubmit SubmitPayment ]
+        [ form [ onSubmit SubmitCard ]
             [ div []
                 [ CreditCard.card CreditCard.Config.defaultConfig cardData ]
             , div []
                 [ div [ class "my-3" ] [ cardNumberInput ]
-                , div [ class "my-3" ] [ cardNameInput ]
+
+                -- , div [ class "my-3" ] [ cardNameInput ]
                 , div [ class "my-3 d-flex" ]
                     [ cardMonthInput
                     , cardYearInput

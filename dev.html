@@ -8,18 +8,26 @@
   <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
   <script src="dev.js"></script>
 </head>
-<body>
-  <div class="d-flex justify-content-center mt-5">
-    <div id="sportspaycc"></div>
+<body class="modal-open">
+  <div class="modal fade show" tabindex="-1" role="dialog" style="padding-right: 15px; display:block;">
+    <div class="modal-dialog" role="document" style="max-width: 383px;">
+      <div class="modal-content">
+        <div class="modal-body">
+          <div id="sportspaycc"></div>
+        </div>
+      </div>
+    </div>
   </div>
+  <div class="modal-backdrop fade show"></div>
   <script>
     var sportspay = Elm.SportspayCC.init(
       {
         node: document.getElementById("sportspaycc"),
         flags: {
-          host: "replaceme",
-          apiKey: "replaceme",
-          paymentUrl: "http://demo.curling.test:3000/admin/premium_purchases" // This is where we submit the one time token in order to complete the payment.
+          sportspayHost: "replaceme", // Host comes from Sportspay API call.
+          sportspayApiKey: "replaceme", // API key comes from Sportspay API call.
+          transactionAmount: "$100.00", // For display purposes only, but should match your total sale with tax.
+          transactionUrl: "replaceme" // This is where to submit the resulting one time token in order to complete the payment.
         }
       }
     )
