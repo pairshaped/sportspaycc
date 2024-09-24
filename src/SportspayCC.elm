@@ -633,7 +633,7 @@ viewCardData { transactionAmount } cardData paying =
                     ]
                 ]
             ]
-        , img [ class "w-50 mt-2", src "sports-pay-logo.svg", alt "Powered by SportsPay" ] []
+        , img [ class "w-50 mt-2", src "https://raw.githubusercontent.com/pairshaped/sportspaycc/refs/heads/master/sports-pay-logo.svg", alt "Powered by SportsPay" ] []
         ]
 
 
