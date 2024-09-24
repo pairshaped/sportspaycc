@@ -5,6 +5,8 @@
 
 Embeddable javscript widget to ask for Credit Card information and submit it directly to SportsPay.
 
+![SportsPay Credit Card Widget](https://github.com/pairshaped/sportspaycc/blob/master/sportspaycc-widget.png?raw=true)
+
 ## Using the widget
 
 ### 1. Include the Widget's Javascript
