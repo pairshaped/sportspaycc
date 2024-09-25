@@ -25,6 +25,7 @@ type alias Model =
     , cardErrors : CardErrors
     , currentDate : Maybe DateParts
     , ott : Maybe String
+    , paying : Bool
     }
 
 
@@ -89,6 +90,7 @@ init flags =
       , cardErrors = emptyCardErrors
       , currentDate = Nothing
       , ott = Nothing
+      , paying = False
       }
     , getCurrentTime
     )
@@ -521,11 +523,14 @@ update msg model =
 
         SubmitCard ->
             let
-                updatedModel =
-                    { model | cardErrors = validate model }
+                cardErrors =
+                    validate model
 
                 isValid =
-                    not (hasBlanks model.cardData || hasCardErrors updatedModel.cardErrors)
+                    not (hasBlanks model.cardData || hasCardErrors cardErrors)
+
+                updatedModel =
+                    { model | cardErrors = cardErrors, paying = isValid }
             in
             ( updatedModel
             , if isValid then
@@ -540,7 +545,7 @@ update msg model =
                 Ok result ->
                     case result.ott of
                         Just ott_ ->
-                            ( model, completePayment model.flags ott_ )
+                            ( { model | paying = True }, completePayment model.flags ott_ )
 
                         Nothing ->
                             let
@@ -552,7 +557,7 @@ update msg model =
                                     , ott = Just result.message
                                     }
                             in
-                            ( { model | cardErrors = updatedCardErrors }, Cmd.none )
+                            ( { model | cardErrors = updatedCardErrors, paying = False }, Cmd.none )
 
                 Err error ->
                     let
@@ -567,14 +572,14 @@ update msg model =
 
 
 view : Model -> Html Msg
-view { flags, cardData, cardErrors, ott } =
+view { flags, paying, cardData, cardErrors, ott } =
     case ott of
         Just ott_ ->
             div [] [ text ("Have OTT: " ++ ott_) ]
 
         Nothing ->
             div [ class "d-flex flex-column" ]
-                [ viewCardData flags cardData cardErrors
+                [ viewCardData flags paying cardData cardErrors
                 , if hasCardErrors cardErrors then
                     viewErrors cardErrors
 
@@ -602,8 +607,8 @@ viewErrors cardErrors =
         ]
 
 
-viewCardData : Flags -> CreditCard.CardData {} -> CardErrors -> Html Msg
-viewCardData { transactionAmount } cardData cardErrors =
+viewCardData : Flags -> Bool -> CreditCard.CardData {} -> CardErrors -> Html Msg
+viewCardData { transactionAmount } paying cardData cardErrors =
     let
         cardNumberInput =
             input
@@ -694,7 +699,7 @@ viewCardData { transactionAmount } cardData cardErrors =
                     [ type_ "submit"
                     , class "btn btn-primary"
                     , value ("Pay " ++ transactionAmount)
-                    , disabled (hasBlanks cardData || hasCardErrors cardErrors)
+                    , disabled (paying || hasBlanks cardData || hasCardErrors cardErrors)
                     ]
                     []
                 ]
