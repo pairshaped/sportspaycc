@@ -34,6 +34,7 @@ type alias Flags =
     , sportspayApiKey : String
     , transactionAmount : String
     , transactionUrl : String
+    , cancelUrl : String
     }
 
 
@@ -66,7 +67,8 @@ type alias CardErrors =
 
 
 type alias TokenizeResult =
-    { message : String
+    { code : String
+    , message : String
     , ott : Maybe String
     , apiKeyError : Maybe String
     , numberError : Maybe String
@@ -246,6 +248,7 @@ tokenizeResultDecoder =
                     )
     in
     Decode.succeed TokenizeResult
+        |> required "CODE" Decode.string
         |> required "TEXT" Decode.string
         |> optional "OTT" (Decode.nullable Decode.string) Nothing
         |> optionalAt [ "apikey", "message" ] decodeMessage Nothing
@@ -543,11 +546,11 @@ update msg model =
         GotTokenizeResponse response ->
             case response of
                 Ok result ->
-                    case result.ott of
-                        Just ott_ ->
-                            ( { model | processingPayment = True }, completePayment model.flags ott_ )
+                    case ( result.code, result.ott ) of
+                        ( "0000", Just ott ) ->
+                            ( { model | processingPayment = True }, completePayment model.flags ott )
 
-                        Nothing ->
+                        _ ->
                             let
                                 updatedCardErrors =
                                     { number = result.numberError
@@ -573,19 +576,14 @@ update msg model =
 
 view : Model -> Html Msg
 view { flags, processingPayment, cardData, cardErrors, ott } =
-    case ott of
-        Just ott_ ->
-            div [] [ text ("Have OTT: " ++ ott_) ]
+    div [ class "d-flex flex-column" ]
+        [ viewCardData flags processingPayment cardData cardErrors ott
+        , if hasCardErrors cardErrors then
+            viewErrors cardErrors
 
-        Nothing ->
-            div [ class "d-flex flex-column" ]
-                [ viewCardData flags processingPayment cardData cardErrors
-                , if hasCardErrors cardErrors then
-                    viewErrors cardErrors
-
-                  else
-                    text ""
-                ]
+          else
+            text ""
+        ]
 
 
 viewErrors : CardErrors -> Html Msg
@@ -607,8 +605,8 @@ viewErrors cardErrors =
         ]
 
 
-viewCardData : Flags -> Bool -> CreditCard.CardData {} -> CardErrors -> Html Msg
-viewCardData { transactionAmount } processingPayment cardData cardErrors =
+viewCardData : Flags -> Bool -> CreditCard.CardData {} -> CardErrors -> Maybe String -> Html Msg
+viewCardData { transactionAmount } processingPayment cardData cardErrors ott =
     let
         cardNumberInput =
             input
@@ -722,17 +720,22 @@ viewCardData { transactionAmount } processingPayment cardData cardErrors =
             ]
             [ div []
                 [ CreditCard.card CreditCard.Config.defaultConfig cardData ]
-            , div []
-                [ div [ class "my-3" ] [ cardNumberInput ]
+            , case ott of
+                Just _ ->
+                    div [ class "my-3" ] [ text "Processing payment..." ]
 
-                -- , div [ class "my-3" ] [ cardNameInput ]
-                , div [ class "my-3 d-flex" ]
-                    [ cardMonthInput
-                    , cardYearInput
-                    , cardCvvInput
-                    , cardButtons
-                    ]
-                ]
+                Nothing ->
+                    div []
+                        [ div [ class "my-3" ] [ cardNumberInput ]
+
+                        -- , div [ class "my-3" ] [ cardNameInput ]
+                        , div [ class "my-3 d-flex" ]
+                            [ cardMonthInput
+                            , cardYearInput
+                            , cardCvvInput
+                            , cardButtons
+                            ]
+                        ]
             ]
         , img [ class "w-50 mt-2", src "https://raw.githubusercontent.com/pairshaped/sportspaycc/refs/heads/master/sports-pay-logo.svg", alt "Powered by SportsPay" ] []
         ]
