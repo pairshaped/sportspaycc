@@ -4,12 +4,12 @@ import Browser
 import Browser.Navigation as Navigation
 import CreditCard
 import CreditCard.Config
-import Html exposing (Html, a, button, div, em, form, h4, img, input, label, p, text)
-import Html.Attributes exposing (alt, class, disabled, href, placeholder, src, style, type_, value)
+import Html exposing (Html, div, em, form, img, input, p, text)
+import Html.Attributes exposing (alt, class, classList, disabled, maxlength, minlength, placeholder, src, style, type_, value)
 import Html.Events exposing (onBlur, onInput, onSubmit)
 import Http
 import Json.Decode as Decode exposing (Decoder)
-import Json.Decode.Pipeline exposing (custom, optional, optionalAt, required)
+import Json.Decode.Pipeline exposing (optional, optionalAt, required)
 import Regex exposing (Regex)
 import Task
 import Time
@@ -130,11 +130,14 @@ validate { flags, cardData, currentDate } =
                             in
                             match /= Nothing
                     in
-                    if validCardType then
+                    if String.length num < 15 then
+                        Just "Card number is too short"
+
+                    else if validCardType then
                         Nothing
 
                     else
-                        Just "Invalid Card Type"
+                        Just "Card number is invalid or unsupported."
 
                 Nothing ->
                     Nothing
@@ -143,19 +146,23 @@ validate { flags, cardData, currentDate } =
         validExpiry =
             case ( currentDate, cardData.month, cardData.year ) of
                 ( Just currentDate_, Just month, Just year ) ->
-                    case ( String.toInt month, String.toInt year ) of
-                        ( Just m, Just y ) ->
-                            if (y < currentDate_.year) || (y == currentDate_.year && m < currentDate_.month) then
-                                Just "Already expired"
+                    if String.length year < 4 then
+                        Just "Expiry year is too short."
 
-                            else if y > (currentDate_.year + 15) then
-                                Just "Too far in the future"
+                    else
+                        case ( String.toInt month, String.toInt year ) of
+                            ( Just m, Just y ) ->
+                                if (y < currentDate_.year) || (y == currentDate_.year && m < currentDate_.month) then
+                                    Just "Expiry has already passed."
 
-                            else
+                                else if y > (currentDate_.year + 15) then
+                                    Just "Expiry is too far in the future."
+
+                                else
+                                    Nothing
+
+                            _ ->
                                 Nothing
-
-                        _ ->
-                            Nothing
 
                 _ ->
                     Nothing
@@ -165,13 +172,10 @@ validate { flags, cardData, currentDate } =
             case cardData.cvv of
                 Just cvv ->
                     if String.length cvv < 3 then
-                        Just "Too short"
-
-                    else if String.length cvv > 3 then
-                        Just "Too long"
+                        Just "CVV is too short."
 
                     else if String.toInt cvv == Nothing then
-                        Just "Not a number"
+                        Just "CVV must be a number."
 
                     else
                         Nothing
@@ -582,23 +586,19 @@ view { flags, cardData, cardErrors, ott } =
 viewErrors : CardErrors -> Html Msg
 viewErrors cardErrors =
     let
-        viewError label errMsg =
+        viewError errMsg =
             case errMsg of
                 Just msg ->
-                    div [ class "d-flex mt-2" ]
-                        [ div [ class "mr-2" ] [ text label ]
-                        , div [] [ text msg ]
-                        ]
+                    div [ class "mt-2" ] [ text msg ]
 
                 Nothing ->
                     text ""
     in
-    div [ class "d-flex flex-column mt-2 text-danger" ]
-        [ h4 [ class "mt-2" ] [ text "Errors" ]
-        , viewError "Number: " cardErrors.number
-        , viewError "Expiry: " cardErrors.expiry
-        , viewError "CVV: " cardErrors.cvv
-        , viewError "OTT: " cardErrors.ott
+    div [ class "d-flex flex-column mt-4 pb-4 text-danger alert alert-danger" ]
+        [ viewError cardErrors.number
+        , viewError cardErrors.expiry
+        , viewError cardErrors.cvv
+        , viewError cardErrors.ott
         ]
 
 
@@ -607,54 +607,84 @@ viewCardData { transactionAmount } cardData cardErrors =
     let
         cardNumberInput =
             input
-                [ class "w-100 p-2"
-                , onInput UpdateCardNumber
+                [ onInput UpdateCardNumber
                 , value (Maybe.withDefault "" cardData.number)
                 , onBlur Validate
                 , placeholder "Card Number"
+                , minlength 16
+                , maxlength 19
+                , classList
+                    [ ( "p-2", True )
+                    , ( "w-100", True )
+                    , ( "border-danger", cardErrors.number /= Nothing )
+                    ]
                 ]
                 []
 
         cardNameInput =
             input
-                [ class "w-100 p-2"
-                , onInput UpdateCardName
+                [ onInput UpdateCardName
                 , value (Maybe.withDefault "" cardData.name)
                 , onBlur Validate
                 , placeholder "Cardholder Name"
+                , minlength 3
+                , maxlength 64
+                , classList
+                    [ ( "p-2", True )
+                    , ( "w-100", True )
+                    , ( "border-danger", cardErrors.name /= Nothing )
+                    ]
                 ]
                 []
 
         cardMonthInput =
             input
-                [ class "p-2 mr-2"
-                , style "width" "40px"
+                [ style "width" "50px"
                 , onInput UpdateCardMonth
                 , onBlur Validate
                 , value (Maybe.withDefault "" cardData.month)
-                , placeholder "M"
+                , placeholder "MM"
+                , minlength 2
+                , maxlength 2
+                , classList
+                    [ ( "p-2", True )
+                    , ( "mr-2", True )
+                    , ( "border-danger", cardErrors.expiry /= Nothing )
+                    ]
                 ]
                 []
 
         cardYearInput =
             input
-                [ class "p-2 mr-2"
-                , style "width" "60px"
+                [ style "width" "60px"
                 , onInput UpdateCardYear
                 , onBlur Validate
                 , value (Maybe.withDefault "" cardData.year)
                 , placeholder "YYYY"
+                , minlength 4
+                , maxlength 4
+                , classList
+                    [ ( "p-2", True )
+                    , ( "mr-2", True )
+                    , ( "border-danger", cardErrors.expiry /= Nothing )
+                    ]
                 ]
                 []
 
         cardCvvInput =
             input
-                [ class "p-2 mr-2"
-                , style "width" "52px"
+                [ style "width" "52px"
                 , onInput UpdateCardCvv
                 , onBlur Validate
                 , value (Maybe.withDefault "" cardData.cvv)
                 , placeholder "CVV"
+                , minlength 3
+                , maxlength 3
+                , classList
+                    [ ( "p-2", True )
+                    , ( "mr-2", True )
+                    , ( "border-danger", cardErrors.cvv /= Nothing )
+                    ]
                 ]
                 []
 
@@ -670,7 +700,15 @@ viewCardData { transactionAmount } cardData cardErrors =
                 ]
     in
     div [ class "text-left", style "width" "350px" ]
-        [ form [ onSubmit SubmitCard ]
+        [ form
+            [ onSubmit
+                (if hasBlanks cardData || hasCardErrors cardErrors then
+                    NoOp
+
+                 else
+                    SubmitCard
+                )
+            ]
             [ div []
                 [ CreditCard.card CreditCard.Config.defaultConfig cardData ]
             , div []
