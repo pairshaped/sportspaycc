@@ -25,7 +25,7 @@ type alias Model =
     , cardErrors : CardErrors
     , currentDate : Maybe DateParts
     , ott : Maybe String
-    , paying : Bool
+    , processingPayment : Bool
     }
 
 
@@ -90,7 +90,7 @@ init flags =
       , cardErrors = emptyCardErrors
       , currentDate = Nothing
       , ott = Nothing
-      , paying = False
+      , processingPayment = False
       }
     , getCurrentTime
     )
@@ -530,7 +530,7 @@ update msg model =
                     not (hasBlanks model.cardData || hasCardErrors cardErrors)
 
                 updatedModel =
-                    { model | cardErrors = cardErrors, paying = isValid }
+                    { model | cardErrors = cardErrors, processingPayment = isValid }
             in
             ( updatedModel
             , if isValid then
@@ -545,7 +545,7 @@ update msg model =
                 Ok result ->
                     case result.ott of
                         Just ott_ ->
-                            ( { model | paying = True }, completePayment model.flags ott_ )
+                            ( { model | processingPayment = True }, completePayment model.flags ott_ )
 
                         Nothing ->
                             let
@@ -557,7 +557,7 @@ update msg model =
                                     , ott = Just result.message
                                     }
                             in
-                            ( { model | cardErrors = updatedCardErrors, paying = False }, Cmd.none )
+                            ( { model | cardErrors = updatedCardErrors, processingPayment = False }, Cmd.none )
 
                 Err error ->
                     let
@@ -572,14 +572,14 @@ update msg model =
 
 
 view : Model -> Html Msg
-view { flags, paying, cardData, cardErrors, ott } =
+view { flags, processingPayment, cardData, cardErrors, ott } =
     case ott of
         Just ott_ ->
             div [] [ text ("Have OTT: " ++ ott_) ]
 
         Nothing ->
             div [ class "d-flex flex-column" ]
-                [ viewCardData flags paying cardData cardErrors
+                [ viewCardData flags processingPayment cardData cardErrors
                 , if hasCardErrors cardErrors then
                     viewErrors cardErrors
 
@@ -608,7 +608,7 @@ viewErrors cardErrors =
 
 
 viewCardData : Flags -> Bool -> CreditCard.CardData {} -> CardErrors -> Html Msg
-viewCardData { transactionAmount } paying cardData cardErrors =
+viewCardData { transactionAmount } processingPayment cardData cardErrors =
     let
         cardNumberInput =
             input
@@ -698,8 +698,14 @@ viewCardData { transactionAmount } paying cardData cardErrors =
                 [ input
                     [ type_ "submit"
                     , class "btn btn-primary"
-                    , value ("Pay " ++ transactionAmount)
-                    , disabled (paying || hasBlanks cardData || hasCardErrors cardErrors)
+                    , value
+                        (if processingPayment then
+                            "Processing..."
+
+                         else
+                            "Pay " ++ transactionAmount
+                        )
+                    , disabled (processingPayment || hasBlanks cardData || hasCardErrors cardErrors)
                     ]
                     []
                 ]
