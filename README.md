@@ -30,10 +30,11 @@ The widget is embedded using Javascript, which is how web browsers can enhance a
     {
       node: document.getElementById("sportspaycc"), // Must be the same as the div id above.
       flags: {
-        sportspayHost: "replaceme", // Host comes from Sportspay API call.
+        sportspayHost: "https://replaceme", // Host comes from Sportspay API call.
         sportspayApiKey: "replaceme", // API key comes from Sportspay API call.
         transactionAmount: "$100.00", // For display purposes only, but should match your total sale with tax.
-        transactionUrl: "replaceme" // This is where to submit the resulting one time token in order to complete the payment.
+        transactionUrl: "https://replaceme", // This is where to submit the resulting one time token in order to complete the payment.
+        cancelUrl: "https://replaceme" // This is where to send the user if they cancel the transaction.
       }
     }
   )
@@ -53,7 +54,12 @@ npm install
 
 ### Running It
 
-Edit dev.html and configure the application's parameters for your environment. Then run it:
+Copy dev.html.example to dev.html:
+```
+cp dev.html.example dev.html
+```
+
+Edit dev.html and configure the flags (parameters) for your environment. Then run it:
 
 ```
 npm start
