@@ -196,6 +196,15 @@ hasCardErrors { number, expiry, cvv, ott } =
         || (ott /= Nothing)
 
 
+hasBlanks : CreditCard.CardData {} -> Bool
+hasBlanks { number, month, year, cvv } =
+    (number == Nothing)
+        -- || (name == Nothing)
+        || (month == Nothing)
+        || (year == Nothing)
+        || (cvv == Nothing)
+
+
 tokenizeResultDecoder : Decoder TokenizeResult
 tokenizeResultDecoder =
     -- , "TEXT": "TOKEN OK"
@@ -484,24 +493,34 @@ update msg model =
             let
                 cardErrors =
                     validate model
+
+                updatedCardData cardData =
+                    -- Padd the month if necessary
+                    { cardData
+                        | month =
+                            case cardData.month of
+                                Just month ->
+                                    if String.toInt month == Just 0 then
+                                        Nothing
+
+                                    else if String.length month == 1 then
+                                        Just ("0" ++ month)
+
+                                    else
+                                        cardData.month
+
+                                Nothing ->
+                                    Nothing
+                    }
             in
-            ( { model | cardErrors = cardErrors }, Cmd.none )
+            ( { model | cardData = updatedCardData model.cardData, cardErrors = cardErrors }, Cmd.none )
 
         SubmitCard ->
             let
                 updatedModel =
                     { model | cardErrors = validate model }
 
-                isValid : Bool
                 isValid =
-                    let
-                        hasBlanks { number, month, year, cvv } =
-                            (number == Nothing)
-                                -- && (name == Nothing)
-                                && (month == Nothing)
-                                && (year == Nothing)
-                                && (cvv == Nothing)
-                    in
                     not (hasBlanks model.cardData || hasCardErrors updatedModel.cardErrors)
             in
             ( updatedModel
@@ -645,7 +664,7 @@ viewCardData { transactionAmount } cardData cardErrors =
                     [ type_ "submit"
                     , class "btn btn-primary"
                     , value ("Pay " ++ transactionAmount)
-                    , disabled (hasCardErrors cardErrors)
+                    , disabled (hasBlanks cardData || hasCardErrors cardErrors)
                     ]
                     []
                 ]
